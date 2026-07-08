@@ -1,0 +1,41 @@
+node_modules
+.cache
+public/*
+dist
+!public/.gitkeep
+.env
+.env.test
+.cache
+logs/
+
+# Uploads (mídia enviada em runtime)
+uploads/*
+!uploads/.gitkeep
+
+# WhatsApp Baileys
+.baileys_auth/
+.baileys_auth/*
+
+# Legado wwebjs (removido do projeto)
+.wwebjs_auth/
+.wwebjs_auth/*
+*/.wwebjs_auth/
+./.wwebjs_auth/*
+.wwebjs*/
+WWebJS/
+
+yarn.lock
+yarn-error.log
+
+/src/config/sentry.js
+
+# Ignore test-related files
+/coverage.data
+/coverage/
+
+.data/
+reports/report.json
+reports/report.html
+
+backend/newrelic_agent.log
+newrelic_agent.log
