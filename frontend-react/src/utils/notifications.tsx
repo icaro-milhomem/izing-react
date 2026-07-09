@@ -3,50 +3,29 @@ import { Box, Button, IconButton, Typography } from '@mui/material'
 import { X } from 'lucide-react'
 import type { Message, Ticket } from '@/types/entities'
 import { getGlobalNotifier, type InAppNotifier } from '@/utils/snackbarUtils'
+import { getActiveTicketIdFromUrl } from '@/utils/messageTicket'
+import {
+  playConfiguredNotificationSound,
+  previewNotificationSound
+} from '@/utils/notificationSoundSettings'
 
 const recentKeys = new Map<string, number>()
 
-let notificationAudio: HTMLAudioElement | null = null
-
-function playBeep() {
-  try {
-    const ctx = new AudioContext()
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    osc.frequency.value = 880
-    gain.gain.value = 0.08
-    osc.start()
-    osc.stop(ctx.currentTime + 0.15)
-    setTimeout(() => ctx.close(), 300)
-  } catch {
-    /* ignore */
-  }
-}
-
 export function initNotificationAudio() {
-  if (notificationAudio || typeof document === 'undefined') return
-  notificationAudio = document.createElement('audio')
-  notificationAudio.preload = 'auto'
-  notificationAudio.style.display = 'none'
-  document.body.appendChild(notificationAudio)
+  /* Mantido por compatibilidade — o áudio usa Web Audio API. */
 }
 
 export function unlockNotificationAudio() {
-  initNotificationAudio()
-  playBeep()
+  previewNotificationSound()
 }
 
 export function playNotificationSound() {
-  initNotificationAudio()
-  playBeep()
+  playConfiguredNotificationSound()
 }
 
 export function isViewingTicketChat(ticketId: number): boolean {
-  const path = `${window.location.pathname}${window.location.hash}`
-  const match = path.match(/\/atendimento\/(\d+)/)
-  return match ? Number(match[1]) === ticketId : false
+  const activeId = getActiveTicketIdFromUrl()
+  return activeId != null && activeId === ticketId
 }
 
 const INTERNAL_CHAT_PEER_KEY = 'internalChatPeerId'
@@ -106,16 +85,27 @@ function userCanReceiveTicketNotification(ticket: Ticket): boolean {
   return true
 }
 
-export function shouldNotifyIncomingMessage(payload: Message | null | undefined): boolean {
+export function shouldReceiveIncomingMessage(payload: Message | null | undefined): boolean {
   try {
     if (!payload || payload.fromMe) return false
     const ticket = payload.ticket as Ticket | undefined
     if (!ticket?.id) return false
-    if (isViewingTicketChat(ticket.id)) return false
     return userCanReceiveTicketNotification(ticket)
   } catch {
     return true
   }
+}
+
+export function shouldShowIncomingMessageToast(ticketId: number): boolean {
+  return !isViewingTicketChat(ticketId)
+}
+
+/** @deprecated use shouldReceiveIncomingMessage + shouldShowIncomingMessageToast */
+export function shouldNotifyIncomingMessage(payload: Message | null | undefined): boolean {
+  if (!shouldReceiveIncomingMessage(payload)) return false
+  const ticket = payload?.ticket as Ticket | undefined
+  if (!ticket?.id) return false
+  return shouldShowIncomingMessageToast(ticket.id)
 }
 
 function shouldSkipDuplicate(key: string): boolean {
@@ -213,6 +203,7 @@ async function deliverNotification(
     dedupeKey?: string
     browserTag?: string
     browserIcon?: string
+    showInApp?: boolean
   }
 ) {
   if (options.dedupeKey && shouldSkipDuplicate(options.dedupeKey)) return
@@ -221,8 +212,9 @@ async function deliverNotification(
 
   const notifier = resolveNotifier(options.notifier)
   const onOpen = options.onOpen
+  const showInApp = options.showInApp !== false
 
-  if (notifier) {
+  if (showInApp && notifier) {
     showInAppNotification(notifier, title, body, onOpen)
   }
 
@@ -290,7 +282,7 @@ export async function notifyIncomingMessage(
   notifier?: InAppNotifier
 ) {
   const ticket = payload.ticket as Ticket | undefined
-  if (!ticket?.id) return
+  if (!ticket?.id || !shouldReceiveIncomingMessage(payload)) return
 
   const messageKey = payload.messageId || payload.id
   const contact = ticket.contact || payload.contact
@@ -307,7 +299,8 @@ export async function notifyIncomingMessage(
     onOpen: () => onOpen?.(ticket.id!),
     dedupeKey: messageKey ? `${ticket.id}:${messageKey}` : undefined,
     browserTag: `ticket-${ticket.id}-${Date.now()}`,
-    browserIcon: contact?.profilePicUrl
+    browserIcon: contact?.profilePicUrl,
+    showInApp: shouldShowIncomingMessageToast(ticket.id)
   })
 }
 

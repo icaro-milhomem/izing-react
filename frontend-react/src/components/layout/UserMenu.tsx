@@ -9,12 +9,13 @@ import {
   MenuItem,
   Typography
 } from '@mui/material'
-import { LogOut, User } from 'lucide-react'
+import { LogOut, RefreshCw, User } from 'lucide-react'
 import { ActionIconButton } from '@/components/icons/ActionIconButton'
 import { UserStatusSelect } from '@/components/UserStatusSelect'
 import { ProfileDialog } from '@/components/layout/ProfileDialog'
 import { SystemVersion } from '@/components/layout/SystemVersion'
 import { useAppTheme } from '@/providers/AppThemeProvider'
+import { clearAppCache } from '@/utils/clearAppCache'
 
 interface UserMenuProps {
   username?: string | null
@@ -33,7 +34,19 @@ export function UserMenu({ username, profile, onLogout }: UserMenuProps) {
   const { colors } = useAppTheme()
   const [anchor, setAnchor] = useState<null | HTMLElement>(null)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [clearingCache, setClearingCache] = useState(false)
   const open = Boolean(anchor)
+
+  const handleClearCache = async () => {
+    setAnchor(null)
+    setClearingCache(true)
+    try {
+      await clearAppCache()
+    } catch {
+      setClearingCache(false)
+      window.location.reload()
+    }
+  }
 
   return (
     <>
@@ -81,6 +94,14 @@ export function UserMenu({ username, profile, onLogout }: UserMenuProps) {
             <User size={18} strokeWidth={2.25} />
           </ListItemIcon>
           <ListItemText>Perfil</ListItemText>
+        </MenuItem>
+        <MenuItem disabled={clearingCache} onClick={() => void handleClearCache()}>
+          <ListItemIcon>
+            <RefreshCw size={18} strokeWidth={2.25} />
+          </ListItemIcon>
+          <ListItemText>
+            {clearingCache ? 'Limpando cache…' : 'Limpar cache'}
+          </ListItemText>
         </MenuItem>
         <MenuItem
           onClick={() => {

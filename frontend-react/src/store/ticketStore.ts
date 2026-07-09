@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { Message, Ticket } from '@/types/entities'
 import { checkTicketFilter } from '@/utils/checkTicketFilter'
 import { timestampOrZero } from '@/utils/formatDate'
+import { getActiveTicketIdFromUrl, messageBelongsToTicket } from '@/utils/messageTicket'
 import { resolveMediaUrl } from '@/utils/mediaUrl'
 
 function normalizeMessage(message: Message): Message {
@@ -32,14 +33,36 @@ function orderMessages(messages: Message[]) {
   })
 }
 
+function resolveViewingTicketId(
+  viewingTicketId: number | null,
+  focusedTicket: Ticket | null
+): number | null {
+  return viewingTicketId ?? focusedTicket?.id ?? getActiveTicketIdFromUrl()
+}
+
+function mergeMessages(existing: Message[], incoming: Message[]): Message[] {
+  const merged = [...incoming]
+  existing.forEach(message => {
+    const duplicate = merged.some(
+      item =>
+        item.id === message.id ||
+        (message.messageId && item.messageId === message.messageId)
+    )
+    if (!duplicate) merged.push(message)
+  })
+  return orderMessages(merged)
+}
+
 interface TicketState {
   tickets: Ticket[]
   focusedTicket: Ticket | null
+  viewingTicketId: number | null
   messages: Message[]
   hasMoreMessages: boolean
   hasMoreTickets: boolean
   resetTickets: () => void
   loadTickets: (incoming: Ticket[]) => void
+  setViewingTicketId: (ticketId: number | null) => void
   setFocusedTicket: (ticket: Ticket | null) => void
   updateTicket: (ticket: Ticket) => void
   deleteTicket: (ticketId: number) => void
@@ -56,11 +79,14 @@ interface TicketState {
 export const useTicketStore = create<TicketState>((set, get) => ({
   tickets: [],
   focusedTicket: null,
+  viewingTicketId: null,
   messages: [],
   hasMoreMessages: false,
   hasMoreTickets: true,
 
   resetTickets: () => set({ tickets: [], hasMoreTickets: true }),
+
+  setViewingTicketId: ticketId => set({ viewingTicketId: ticketId }),
 
   loadTickets: incoming => {
     const state = get()
@@ -91,21 +117,35 @@ export const useTicketStore = create<TicketState>((set, get) => ({
   updateTicket: ticket => {
     const { tickets, focusedTicket } = get()
     const idx = tickets.findIndex(t => t.id === ticket.id)
-    let nextTickets = tickets
+    const existing = idx !== -1 ? tickets[idx] : null
+    const merged: Ticket = {
+      ...(existing || {}),
+      ...ticket,
+      contact: ticket.contact ?? existing?.contact,
+      whatsapp: ticket.whatsapp ?? existing?.whatsapp,
+      user: ticket.user ?? existing?.user
+    }
 
+    let nextTickets = tickets
     if (idx === -1) {
-      if (checkTicketFilter(ticket)) {
-        nextTickets = orderTickets([ticket, ...tickets])
+      if (checkTicketFilter(merged)) {
+        nextTickets = orderTickets([merged, ...tickets])
       }
     } else {
-      nextTickets = orderTickets(tickets.map((t, i) => (i === idx ? ticket : t)))
+      nextTickets = orderTickets(tickets.map((t, i) => (i === idx ? merged : t)))
     }
 
     set({
       tickets: nextTickets,
       focusedTicket:
-        focusedTicket?.id === ticket.id
-          ? { ...focusedTicket, ...ticket, contact: ticket.contact ?? focusedTicket.contact }
+        focusedTicket?.id === merged.id
+          ? {
+              ...focusedTicket,
+              ...merged,
+              contact: merged.contact ?? focusedTicket.contact,
+              whatsapp: merged.whatsapp ?? focusedTicket.whatsapp,
+              user: merged.user ?? focusedTicket.user
+            }
           : focusedTicket
     })
   },
@@ -140,7 +180,17 @@ export const useTicketStore = create<TicketState>((set, get) => ({
     set({ tickets: next })
   },
 
-  setMessages: (messages, hasMore) => set({ messages: orderMessages(normalizeMessages(messages)), hasMoreMessages: hasMore }),
+  setMessages: (messages, hasMore) => {
+    if (messages.length === 0) {
+      set({ messages: [], hasMoreMessages: hasMore })
+      return
+    }
+    const { messages: existing } = get()
+    set({
+      messages: mergeMessages(existing, normalizeMessages(messages)),
+      hasMoreMessages: hasMore
+    })
+  },
 
   prependMessages: (messages, hasMore) => {
     const merged = orderMessages([...normalizeMessages(messages), ...get().messages])
@@ -148,15 +198,59 @@ export const useTicketStore = create<TicketState>((set, get) => ({
   },
 
   addMessage: message => {
-    const { messages } = get()
+    const { messages, focusedTicket, viewingTicketId } = get()
+    const activeTicketId = resolveViewingTicketId(viewingTicketId, focusedTicket)
     const normalized = normalizeMessage(message)
-    if (messages.some(m => m.id === normalized.id)) return
+
+    if (activeTicketId != null && !messageBelongsToTicket(normalized, activeTicketId)) {
+      return
+    }
+
+    const existingIndex = messages.findIndex(
+      m =>
+        m.id === normalized.id ||
+        (normalized.messageId && m.messageId && m.messageId === normalized.messageId)
+    )
+
+    if (existingIndex !== -1) {
+      const next = [...messages]
+      next[existingIndex] = { ...next[existingIndex], ...normalized }
+      set({ messages: orderMessages(next) })
+      return
+    }
+
     set({ messages: orderMessages([...messages, normalized]) })
   },
 
   updateMessage: message => {
+    const { messages, focusedTicket, viewingTicketId } = get()
+    const activeTicketId = resolveViewingTicketId(viewingTicketId, focusedTicket)
     const normalized = normalizeMessage(message)
-    const next = get().messages.map(m => (m.id === normalized.id ? { ...m, ...normalized } : m))
+    let found = false
+
+    const next = messages.map(m => {
+      if (m.id === normalized.id) {
+        found = true
+        return { ...m, ...normalized }
+      }
+      if (
+        normalized.messageId &&
+        m.messageId &&
+        m.messageId === normalized.messageId
+      ) {
+        found = true
+        return { ...m, ...normalized }
+      }
+      return m
+    })
+
+    if (
+      !found &&
+      (activeTicketId == null || messageBelongsToTicket(normalized, activeTicketId))
+    ) {
+      next.push(normalized)
+    }
+
     set({ messages: orderMessages(next) })
   },
 

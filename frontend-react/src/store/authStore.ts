@@ -28,7 +28,7 @@ function persistSession(data: AuthUser) {
   const user = { ...data, profile }
 
   localStorage.setItem('token', JSON.stringify(user.token))
-  localStorage.setItem('username', user.username)
+  localStorage.setItem('username', user.username?.trim() || '')
   localStorage.setItem('profile', profile)
   localStorage.setItem('userId', String(user.userId))
   localStorage.setItem('usuario', JSON.stringify(user))

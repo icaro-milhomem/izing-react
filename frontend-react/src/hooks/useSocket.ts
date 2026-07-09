@@ -55,7 +55,7 @@ export function connectSocket(user: AuthUser): SocketClient {
   socket = io(getApiUrl(), {
     reconnection: true,
     autoConnect: true,
-    transports: ['websocket'],
+    transports: ['websocket', 'polling'],
     auth: (cb: (data: { token: string | null }) => void) => {
       const tokenItem = localStorage.getItem('token')
       const token = tokenItem ? (JSON.parse(tokenItem) as string) : null

@@ -1,6 +1,7 @@
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
 import socketEmit from "../../helpers/socketEmit";
+import ShowTicketService from "../TicketServices/ShowTicketService";
 
 interface MessageData {
   id?: string;
@@ -69,7 +70,7 @@ const CreateMessageService = async ({
         model: Ticket,
         as: "ticket",
         where: { tenantId },
-        include: ["contact"]
+        include: ["contact", "whatsapp"]
       },
       {
         model: Message,
@@ -83,10 +84,23 @@ const CreateMessageService = async ({
     throw new Error("ERR_CREATING_MESSAGE");
   }
 
+  const plainMessage = message.get({ plain: true });
+
   socketEmit({
     tenantId,
     type: "chat:create",
-    payload: message
+    payload: plainMessage
+  });
+
+  const ticket = await ShowTicketService({
+    id: messageData.ticketId,
+    tenantId
+  });
+
+  socketEmit({
+    tenantId,
+    type: "ticket:update",
+    payload: ticket
   });
 
   return message;

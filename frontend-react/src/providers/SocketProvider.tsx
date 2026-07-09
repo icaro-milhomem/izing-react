@@ -8,15 +8,16 @@ import { listWhatsapps } from '@/api/whatsapp'
 import { useWhatsappStore } from '@/store/whatsappStore'
 import { useTicketStore } from '@/store/ticketStore'
 import { useUsersAppStore, type OnlineUserBubble } from '@/store/usersAppStore'
-import type { Message } from '@/types/entities'
+import type { Message, Ticket } from '@/types/entities'
 import { fetchNotificationTickets } from '@/utils/fetchNotifications'
+import { messageBelongsToTicket, getActiveTicketIdFromUrl } from '@/utils/messageTicket'
 import { scheduleNotificationRefresh } from '@/utils/scheduleNotificationRefresh'
 import {
   notifyIncomingMessage,
   notifyInternalMessage,
   notifyPendingClient,
   setInternalChatOpenPeerId,
-  shouldNotifyIncomingMessage,
+  shouldReceiveIncomingMessage,
   shouldNotifyInternalMessage,
   unlockNotificationAudio
 } from '@/utils/notifications'
@@ -29,6 +30,25 @@ function getTenantId(): number | null {
   } catch {
     return null
   }
+}
+
+function isSocketMessagePayload(
+  payload: unknown,
+  type: string
+): payload is Message {
+  if (!payload || typeof payload !== 'object') return false
+  if (!type.startsWith('chat:')) return false
+  return 'id' in payload || 'messageId' in payload || 'ticketId' in payload
+}
+
+function isSocketTicketPayload(payload: unknown): payload is Ticket {
+  return (
+    !!payload &&
+    typeof payload === 'object' &&
+    'id' in payload &&
+    'status' in payload &&
+    !('messageId' in payload)
+  )
 }
 
 function getCurrentUserId(): number | null {
@@ -50,16 +70,21 @@ export function SocketProvider({ children }: { children: ReactNode }) {
   const updateSession = useWhatsappStore(s => s.updateSession)
   const deleteSession = useWhatsappStore(s => s.deleteSession)
   const updateTicket = useTicketStore(s => s.updateTicket)
+  const addMessage = useTicketStore(s => s.addMessage)
+  const updateMessage = useTicketStore(s => s.updateMessage)
   const setUsersApp = useUsersAppStore(s => s.setUsersApp)
   const patchUserStatus = useUsersAppStore(s => s.patchUserStatus)
 
   useEffect(() => {
     const unlock = () => unlockNotificationAudio()
-    document.addEventListener('click', unlock, { once: true })
-    document.addEventListener('keydown', unlock, { once: true, capture: true })
+    const events = ['click', 'keydown', 'touchstart', 'pointerdown'] as const
+    events.forEach(event => {
+      document.addEventListener(event, unlock, { once: true, capture: true })
+    })
     return () => {
-      document.removeEventListener('click', unlock)
-      document.removeEventListener('keydown', unlock, { capture: true })
+      events.forEach(event => {
+        document.removeEventListener(event, unlock, { capture: true })
+      })
     }
   }, [])
 
@@ -108,32 +133,64 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    const onTicketList = (data: { type: string; payload?: Message & { contact?: { name?: string } } }) => {
-      if (data.type === 'chat:create') {
-        if (data.payload && shouldNotifyIncomingMessage(data.payload)) {
-          const payload = data.payload
+    const onTicketList = (data: {
+      type: string
+      payload?: (Message & { contact?: { name?: string } }) | Ticket
+    }) => {
+      const payload = data.payload
+      const { focusedTicket, viewingTicketId } = useTicketStore.getState()
+      const activeTicketId =
+        viewingTicketId ?? focusedTicket?.id ?? getActiveTicketIdFromUrl()
+
+      if (data.type === 'ticket:update' || data.type === 'ticket:create') {
+        if (isSocketTicketPayload(payload)) {
+          updateTicket(payload)
+        }
+      }
+
+      const messagePayload = isSocketMessagePayload(payload, data.type)
+        ? payload
+        : null
+      const inFocusedChat =
+        messagePayload &&
+        activeTicketId != null &&
+        messageBelongsToTicket(messagePayload, activeTicketId)
+
+      if (inFocusedChat && messagePayload) {
+        if (data.type === 'chat:create') addMessage(messagePayload)
+        if (data.type === 'chat:update') updateMessage(messagePayload)
+        if (data.type === 'chat:delete' || data.type === 'chat:ack') {
+          updateMessage(messagePayload)
+        }
+      }
+
+      if (data.type === 'chat:create' && messagePayload) {
+        if (shouldReceiveIncomingMessage(messagePayload)) {
           void notifyIncomingMessage(
-            payload,
+            messagePayload,
             ticketId => navigate(`/atendimento/${ticketId}`),
             notifier
           )
         }
-        if (data.payload?.ticket) {
-          updateTicket(data.payload.ticket as import('@/types/entities').Ticket)
+        if (messagePayload.ticket) {
+          updateTicket(messagePayload.ticket as Ticket)
         }
         scheduleNotificationRefresh(() => {
           void fetchNotificationTickets()
         })
       }
       if (data.type === 'notification:new') {
-        const contactName = data.payload?.contact?.name || data.payload?.ticket?.contact?.name
+        const ticketPayload = isSocketTicketPayload(payload) ? payload : undefined
+        const contactName = ticketPayload?.contact?.name
         void notifyPendingClient(
           contactName,
           notifier,
           () => navigate('/atendimento')
         )
-        if (data.payload?.ticket) {
-          updateTicket(data.payload.ticket as import('@/types/entities').Ticket)
+        if (ticketPayload) {
+          updateTicket(ticketPayload)
+        } else if (messagePayload?.ticket) {
+          updateTicket(messagePayload.ticket as Ticket)
         }
         scheduleNotificationRefresh(() => {
           void fetchNotificationTickets()
@@ -233,6 +290,8 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     updateSession,
     deleteSession,
     updateTicket,
+    addMessage,
+    updateMessage,
     setUsersApp,
     patchUserStatus
   ])

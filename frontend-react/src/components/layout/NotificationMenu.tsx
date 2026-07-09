@@ -12,9 +12,10 @@ import {
   Menu,
   Typography
 } from '@mui/material'
-import { Bell } from 'lucide-react'
+import { Bell, Volume2 } from 'lucide-react'
 import { ActionIconButton } from '@/components/icons/ActionIconButton'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { NotificationSoundDialog } from '@/components/layout/NotificationSoundDialog'
 import { ChannelLogo } from '@/components/atendimento/ChannelLogo'
 import { TicketChannelHeader } from '@/components/atendimento/TicketChannelHeader'
 import { useWhatsappStore } from '@/store/whatsappStore'
@@ -34,6 +35,7 @@ function ticketAvatarUrl(ticket: Ticket) {
 export function NotificationMenu() {
   const navigate = useNavigate()
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
+  const [soundOpen, setSoundOpen] = useState(false)
   const [confirmTicket, setConfirmTicket] = useState<Ticket | null>(null)
   const openTickets = useNotificationStore(s => s.openTickets)
   const pendingTickets = useNotificationStore(s => s.pendingTickets)
@@ -125,6 +127,9 @@ export function NotificationMenu() {
 
   return (
     <>
+      <ActionIconButton title="Som das notificações" onClick={() => setSoundOpen(true)} sx={{ mr: 0.5 }}>
+        <Volume2 size={18} strokeWidth={2.25} />
+      </ActionIconButton>
       <ActionIconButton
         title="Notificações"
         onClick={e => setAnchorEl(e.currentTarget)}
@@ -256,6 +261,7 @@ export function NotificationMenu() {
         onCancel={() => setConfirmTicket(null)}
         onConfirm={confirmOpenTicket}
       />
+      <NotificationSoundDialog open={soundOpen} onClose={() => setSoundOpen(false)} />
     </>
   )
 }

@@ -57,7 +57,7 @@ export function ProfileDialog({ open, onClose }: ProfileDialogProps) {
         username: data.name || name.trim(),
         email: data.email || email.trim()
       })
-      localStorage.setItem('username', data.name || name.trim())
+      localStorage.setItem('username', (data.name || name).trim())
       enqueueSnackbar('Perfil atualizado', { variant: 'success' })
       onClose()
     } catch (err: unknown) {

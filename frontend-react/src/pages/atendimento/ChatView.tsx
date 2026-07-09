@@ -54,6 +54,7 @@ import { ForwardMessageDialog } from '@/components/atendimento/ForwardMessageDia
 import type { Contact, Message, Queue } from '@/types/entities'
 import { useWhatsappStore } from '@/store/whatsappStore'
 import { buildChatTimeline } from '@/utils/chatTimeline'
+import { messageBelongsToTicket } from '@/utils/messageTicket'
 import { getChatBubblePalette } from '@/utils/chatBubbleStyles'
 import { useBrandTokens } from '@/hooks/useBrandTokens'
 import { canUseWavoip, openWavoipCall } from '@/utils/callHelpers'
@@ -80,6 +81,7 @@ export function ChatView({ ticketId, filas }: ChatViewProps) {
   const focusedTicket = useTicketStore(s => s.focusedTicket)
   const messages = useTicketStore(s => s.messages)
   const setFocusedTicket = useTicketStore(s => s.setFocusedTicket)
+  const setViewingTicketId = useTicketStore(s => s.setViewingTicketId)
   const updateTicket = useTicketStore(s => s.updateTicket)
   const setMessages = useTicketStore(s => s.setMessages)
   const addMessage = useTicketStore(s => s.addMessage)
@@ -140,6 +142,11 @@ export function ChatView({ ticketId, filas }: ChatViewProps) {
       }),
     [messages, ticketLogs, focusedTicket]
   )
+
+  useEffect(() => {
+    setViewingTicketId(ticketId ?? null)
+    return () => setViewingTicketId(null)
+  }, [ticketId, setViewingTicketId])
 
   useEffect(() => {
     if (!ticketId) {
@@ -223,14 +230,34 @@ export function ChatView({ ticketId, filas }: ChatViewProps) {
     if (!socket || !usuario?.tenantId || !ticketId) return
 
     const tenantId = usuario.tenantId
-    socket.emit(`${tenantId}:joinChatBox`, `${ticketId}`)
+    let syncTimer: ReturnType<typeof setTimeout> | null = null
 
-    const belongsToTicket = (message: Message) =>
-      message.ticketId === ticketId || message.ticket?.id === ticketId
+    const syncMessages = () => {
+      void listMessages(ticketId, { pageNumber: 1 })
+        .then(res => {
+          res.data.messages.forEach(message => addMessage(message))
+        })
+        .catch(() => {})
+    }
+
+    const scheduleSync = () => {
+      if (syncTimer) clearTimeout(syncTimer)
+      syncTimer = setTimeout(syncMessages, 350)
+    }
+
+    const joinChat = () => {
+      socket.emit(`${tenantId}:joinChatBox`, `${ticketId}`)
+    }
+
+    joinChat()
+    socket.on('connect', joinChat)
 
     const onTicketList = (data: { type: string; payload?: Message }) => {
-      if (!data.payload || !belongsToTicket(data.payload)) return
-      if (data.type === 'chat:create') addMessage(data.payload)
+      if (!data.payload || !messageBelongsToTicket(data.payload, ticketId)) return
+      if (data.type === 'chat:create') {
+        addMessage(data.payload)
+        scheduleSync()
+      }
       if (data.type === 'chat:update') updateMessage(data.payload)
       if (data.type === 'chat:delete' || data.type === 'chat:ack') {
         updateMessage(data.payload)
@@ -238,10 +265,11 @@ export function ChatView({ ticketId, filas }: ChatViewProps) {
     }
 
     const onAppMessage = (data: { action: string; message?: Message }) => {
-      if (data.action === 'update' && data.message && belongsToTicket(data.message)) {
+      if (data.action === 'update' && data.message && messageBelongsToTicket(data.message, ticketId)) {
         updateMessage(data.message)
+        scheduleSync()
       }
-      if (data.action === 'delete' && data.message && belongsToTicket(data.message)) {
+      if (data.action === 'delete' && data.message && messageBelongsToTicket(data.message, ticketId)) {
         patchMessage(data.message.id, { isDeleted: true })
       }
     }
@@ -249,7 +277,12 @@ export function ChatView({ ticketId, filas }: ChatViewProps) {
     socket.on(`${tenantId}:ticketList`, onTicketList)
     socket.on(`tenant:${tenantId}:appMessage`, onAppMessage)
 
+    const poll = window.setInterval(syncMessages, 12000)
+
     return () => {
+      if (syncTimer) clearTimeout(syncTimer)
+      window.clearInterval(poll)
+      socket.off('connect', joinChat)
       socket.off(`${tenantId}:ticketList`, onTicketList)
       socket.off(`tenant:${tenantId}:appMessage`, onAppMessage)
     }
@@ -349,8 +382,12 @@ export function ChatView({ ticketId, filas }: ChatViewProps) {
   const refreshTicket = async () => {
     if (!ticketId) return
     try {
-      const { data } = await getTicket(ticketId)
-      setFocusedTicket(data)
+      const [ticketRes, messagesRes] = await Promise.all([
+        getTicket(ticketId),
+        listMessages(ticketId, { pageNumber: 1 })
+      ])
+      setFocusedTicket(ticketRes.data)
+      messagesRes.data.messages.forEach(message => addMessage(message))
     } catch {
       /* ignore */
     }

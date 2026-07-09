@@ -10,7 +10,7 @@ import { useState } from 'react'
 import { useSnackbar } from 'notistack'
 import { resolveBackendError } from '@/api/backendErrors'
 import { sendTicketMessage } from '@/api/tickets'
-import { buildOutgoingTextPayload } from '@/utils/outgoingMessage'
+import { buildOutgoingTextPayload, formatOutgoingSignature } from '@/utils/outgoingMessage'
 import type { Message } from '@/types/entities'
 
 interface ScheduleMessageDialogProps {
@@ -42,8 +42,7 @@ export function ScheduleMessageDialog({
     }
     setSending(true)
     try {
-      const username = localStorage.getItem('username')
-      const text = username ? `*${username}*:\n ${body.trim()}` : body.trim()
+      const text = formatOutgoingSignature(localStorage.getItem('username'), body)
       await sendTicketMessage(
         ticketId,
         {

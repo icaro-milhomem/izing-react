@@ -23,7 +23,11 @@ import { resolveBackendError } from '@/api/backendErrors'
 import { listFastReplies } from '@/api/fastReply'
 import { sendTicketMessage } from '@/api/tickets'
 import { useAudioRecorder } from '@/hooks/useAudioRecorder'
-import { appendOutgoingFormFields, buildOutgoingTextPayload } from '@/utils/outgoingMessage'
+import {
+  appendOutgoingFormFields,
+  buildOutgoingTextPayload,
+  formatOutgoingSignature
+} from '@/utils/outgoingMessage'
 import { randomUUID } from '@/utils/uuid'
 import type { Message } from '@/types/entities'
 
@@ -81,9 +85,8 @@ export function ChatInput({
       if (match) body = match.message
       else throw new Error('Mensagem rápida não encontrada')
     }
-    const username = localStorage.getItem('username')
-    if (sign && username) {
-      body = `*${username}*:\n ${body}`
+    if (sign) {
+      body = formatOutgoingSignature(localStorage.getItem('username'), body)
     }
     return body
   }
@@ -217,8 +220,7 @@ export function ChatInput({
   const handleSendVideoLink = async () => {
     const link = `https://meet.jit.si/${randomUUID()}/${randomUUID()}`
     let body = link
-    const username = localStorage.getItem('username')
-    if (sign && username) body = `*${username}*:\n ${body}`
+    if (sign) body = formatOutgoingSignature(localStorage.getItem('username'), body)
     setSending(true)
     try {
       await sendPayload(buildOutgoingTextPayload(body, replyingMessage))

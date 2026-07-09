@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Box,
@@ -11,12 +11,14 @@ import {
   Divider,
   Typography
 } from '@mui/material'
+import { Volume2 } from 'lucide-react'
 import { BrandLogo } from '@/components/brand/BrandLogo'
 import { NavIconBox } from '@/components/icons/NavIconBox'
 import type { MenuItem } from '@/types/auth'
 import { getMenuForProfile } from '@/config/navigation'
 import { SystemVersion } from '@/components/layout/SystemVersion'
 import { DarkModeToggle } from '@/components/layout/DarkModeToggle'
+import { NotificationSoundDialog } from '@/components/layout/NotificationSoundDialog'
 import { useWhatsappStore } from '@/store/whatsappStore'
 import { useBrandTokens } from '@/hooks/useBrandTokens'
 
@@ -31,6 +33,7 @@ interface SidebarNavProps {
 export function SidebarNav({ profile, mobileOpen, onClose }: SidebarNavProps) {
   const location = useLocation()
   const navigate = useNavigate()
+  const [soundOpen, setSoundOpen] = useState(false)
   const { mode, brand, sidebar } = useBrandTokens()
   const whatsapps = useWhatsappStore(s => s.sessions)
   const channelProblem = whatsapps.some(w =>
@@ -155,8 +158,26 @@ export function SidebarNav({ profile, mobileOpen, onClose }: SidebarNavProps) {
       </List>
 
       <Divider sx={{ borderColor: sidebar.border }} />
-      <Box sx={{ px: 1.5, py: 1.25 }}>
+      <Box sx={{ px: 1.5, py: 1.25, display: 'flex', flexDirection: 'column', gap: 1 }}>
         <DarkModeToggle variant="sidebar" />
+        {(profile === 'admin' || profile === 'user' || profile === 'super') && (
+          <ListItemButton
+            onClick={() => setSoundOpen(true)}
+            sx={{
+              borderRadius: 2,
+              color: sidebar.text,
+              '&:hover': { bgcolor: sidebar.itemHover, color: sidebar.textActive }
+            }}
+          >
+            <ListItemIcon sx={{ minWidth: 36, color: 'inherit' }}>
+              <Volume2 size={18} strokeWidth={2.25} />
+            </ListItemIcon>
+            <ListItemText
+              primary="Som das notificações"
+              slotProps={{ primary: { sx: { fontSize: 14 } } }}
+            />
+          </ListItemButton>
+        )}
       </Box>
       <Divider sx={{ borderColor: sidebar.border }} />
       <Box
@@ -176,6 +197,7 @@ export function SidebarNav({ profile, mobileOpen, onClose }: SidebarNavProps) {
 
   return (
     <Box component="nav" sx={{ width: { md: DRAWER_WIDTH }, flexShrink: { md: 0 } }}>
+      <NotificationSoundDialog open={soundOpen} onClose={() => setSoundOpen(false)} />
       <Drawer
         variant="temporary"
         open={mobileOpen}

@@ -5,6 +5,17 @@ function newMessageFrontId() {
   return frontId()
 }
 
+/** Assinatura: "Nome:" + mensagem (sem * — Baileys não aplica negrito markdown no WhatsApp). */
+export function formatOutgoingSignature(
+  username: string | null | undefined,
+  body: string
+): string {
+  const trimmedBody = body.trim()
+  const name = username?.trim()
+  if (!name) return trimmedBody
+  return `${name}:\n${trimmedBody}`
+}
+
 export function serializeQuotedMessage(message?: Message | null) {
   if (!message?.id) return undefined
 

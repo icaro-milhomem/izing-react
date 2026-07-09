@@ -5,7 +5,7 @@ import { parseDate } from './formatDate'
 
 export function stripUserSignature(body: string): string {
   return body
-    .replace(/^\*[^*]+\*:\s*\n?\s*/, '')
+    .replace(/^\*?[^*\n]+?\*?:\s*\n?\s*/, '')
     .replace(/^Editada:\s*/i, '')
     .replace(/^Mensagem anterior:\s*/i, '')
     .replace(/^[^*]*:\s*$/gm, '')
